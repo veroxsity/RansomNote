@@ -1,0 +1,1 @@
+pwsh -NoLogo -NoProfile -Command "Set-Location -LiteralPath 'C:\Users\verox\OneDrive\Documents\Programming\RansomNote\frontend'; npm run dev"

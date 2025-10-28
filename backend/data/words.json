@@ -1,0 +1,16 @@
+{
+  "prompts": [
+    "Describe your ideal vacation in three words.",
+    "The worst job interview answer ever:",
+    "If pets could talk, they'd say...",
+    "The secret ingredient is...",
+    "Today's mood:"
+  ],
+  "words": [
+    "apple", "destroy", "quickly", "mystery", "sandwich", "velvet", "moon", "screech",
+    "loud", "whisper", "daring", "cactus", "rocket", "sneeze", "glitter", "rust", "pickle",
+    "banana", "umbrella", "dragon", "spark", "coffee", "sunset", "slippery", "dinosaurs",
+    "marble", "button", "jelly", "knight", "toast", "puzzle", "cheese", "moss", "whale",
+    "forest", "computer", "lamp", "doodle", "sugar", "thunder", "pillow", "candle"
+  ]
+}
