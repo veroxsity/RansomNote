@@ -281,7 +281,7 @@ export class GameService {
     if (winnerId != null) {
       const winner = lobby.players.find((p) => p.id === winnerId);
       if (winner) {
-        winner.score = (winner.score || 0) + 1;
+        winner.score += 1;
       }
     }
 
@@ -291,7 +291,7 @@ export class GameService {
     // check win condition
     const someoneWon = lobby.players.find((p) => p.score >= this.WIN_THRESHOLD);
     if (someoneWon) {
-      lobby.state = 'ENDED';
+      lobby.state = 'ENDED' as const;
     } else {
       // advance judgeIndex if present
       if (lobby.judgeIndex == null) {

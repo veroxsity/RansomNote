@@ -1,4 +1,4 @@
-export type LobbyState = 'WAITING' | 'IN_PROGRESS' | 'ENDED';
+export type LobbyState = 'WAITING' | 'IN_PROGRESS' | 'ROUND_ACTIVE' | 'VOTING' | 'ROUND_END' | 'GAME_END' | 'ENDED';
 
 export interface Player {
   id: number;
@@ -26,4 +26,5 @@ export interface Round {
   submissionTime?: number;
   voteTime?: number;
   judgeId?: number | null;
+  timeLimit?: number;
 }
