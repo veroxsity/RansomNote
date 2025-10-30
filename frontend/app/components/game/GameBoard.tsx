@@ -9,13 +9,20 @@ import { Timer } from '../shared/Timer';
 import { ScoreBoard } from '../shared/ScoreBoard';
 
 export const GameBoard = () => {
-  const { lobby, round, currentPlayer, submitAnswer, lastWinnerId } = useGame();
+  const { lobby, round, currentPlayer, submitAnswer, lastWinnerId, hasSubmitted } = useGame();
   const [selectedWords, setSelectedWords] = useState<string[]>([]);
 
-  // Clear selection when stage changes away from answering, or when a new round begins
+  // Clear selection when a new round begins
   useEffect(() => {
     setSelectedWords([]);
-  }, [round?.stage, lobby?.roundNumber]);
+  }, [lobby?.roundNumber]);
+
+  // Clear selection only after server ACK confirms submission
+  useEffect(() => {
+    if (hasSubmitted) {
+      setSelectedWords([]);
+    }
+  }, [hasSubmitted]);
 
   if (!lobby || !round || !currentPlayer) {
     return <div>Loading game...</div>;
@@ -41,9 +48,8 @@ export const GameBoard = () => {
 
   const handleSubmit = () => {
     if (selectedWords.length === 0) return;
-    // Submit current selection
+    // Submit current selection; UI will clear upon server ACK
     submitAnswer(selectedWords);
-    setSelectedWords([]);
   };
 
   return (

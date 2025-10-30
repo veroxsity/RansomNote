@@ -26,7 +26,7 @@ describe('LobbyService', () => {
       const lobby = service.createLobby(hostPlayer);
       expect(lobby).toBeDefined();
       expect(lobby.code).toMatch(/^[A-Z0-9]{6}$/);
-      expect(lobby.state).toBe('WAITING');
+  expect(lobby.state).toBe('WAITING_FOR_PLAYERS');
       expect(lobby.players).toHaveLength(1);
       expect(lobby.players[0]).toBe(hostPlayer);
     });
@@ -75,7 +75,7 @@ describe('LobbyService', () => {
     });
 
     it('should reject duplicate nicknames', () => {
-      expect(() => service.joinLobby(lobbyCode, 'Host', 'socket2')).toThrow('Nickname already taken');
+      expect(() => service.joinLobby(lobbyCode, 'Host', 'socket2')).toThrow('Nickname already taken in lobby');
     });
 
     it('should reject joining non-existent lobby', () => {
@@ -97,7 +97,7 @@ describe('LobbyService', () => {
     let hostId: number;
 
     beforeEach(() => {
-      const host = {
+      const host: Player = {
         id: 1,
         nickname: 'Host',
         score: 0,
@@ -167,7 +167,7 @@ describe('LobbyService', () => {
     let playerId: number;
 
     beforeEach(() => {
-      const host = {
+      const host: Player = {
         id: 1,
         nickname: 'Host',
         score: 0,

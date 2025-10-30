@@ -55,6 +55,29 @@ describe('GameService', () => {
 
       expect(() => service.submitAnswer(lobby.code, p3.id, ['not-a-word'])).toThrow();
     });
+
+    it('rejects using a word more times than present in player pool', () => {
+      const lobby = service.createLobby('Host', 'socket-host');
+      const { player: p2 } = service.joinLobby(lobby.code, 'P2', 's2');
+
+      // Start with small pool to control counts
+      service.startRound(lobby.code, 3, 10);
+      const updated = service.getLobby(lobby.code)!;
+      const p2Words = updated.players.find(p => p.id === p2.id)!.words;
+
+      // Find a word in pool; attempt to use it 2x when it may appear once
+      const word = p2Words[0];
+      const overuse = [word, word];
+
+      // If the word appears only once in pool, this must throw; if it appears twice, try thrice
+      const occurrences = p2Words.filter(w => w === word).length;
+      if (occurrences === 1) {
+        expect(() => service.submitAnswer(lobby.code, p2.id, overuse)).toThrow();
+      } else {
+        // try 3 times
+        expect(() => service.submitAnswer(lobby.code, p2.id, [word, word, word])).toThrow();
+      }
+    });
   });
 
   describe('voting and scoring', () => {

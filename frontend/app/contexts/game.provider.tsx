@@ -146,6 +146,7 @@ export const GameProvider: FC<PropsWithChildren> = ({ children }) => {
 
   const setReady = useCallback(() => {
     if (!socket || !state.lobby) return;
+    setState(prev => ({ ...prev, isLoading: true }));
     socket.emit('player:ready', { code: state.lobby.code });
   }, [socket, state.lobby]);
 

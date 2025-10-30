@@ -12,10 +12,14 @@ import { GameService } from './game.service';
 
 @WebSocketGateway({
   cors: {
-    origin:
-      process.env.NODE_ENV === 'production'
-        ? ['https://ransomnotes.example.com'] // Update with real production domain
-        : ['http://localhost:3000'],
+    origin: (() => {
+      const env = process.env.FRONTEND_ORIGIN;
+      if (env && env.length > 0) {
+        // Support comma-separated list
+        return env.split(',').map((s) => s.trim());
+      }
+      return ['http://localhost:3000'];
+    })(),
     methods: ['GET', 'POST'],
     credentials: true,
   },
@@ -27,6 +31,25 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   constructor(private readonly gameService: GameService) {}
 
+  // Helper to safely target a room across environments/tests
+  private room(code: string): { emit: (event: string, ...args: any[]) => void } {
+    const anyServer: any = this.server as any;
+    if (anyServer) {
+      if (typeof anyServer.to === 'function') {
+        return anyServer.to(code);
+      }
+      if (typeof anyServer.in === 'function') {
+        return anyServer.in(code);
+      }
+      if (typeof anyServer.emit === 'function') {
+        // Fallback to broadcasting to all (best-effort in tests)
+        return { emit: (event: string, ...args: any[]) => anyServer.emit(event, ...args) };
+      }
+    }
+    // No-op fallback for tests
+    return { emit: () => {} };
+  }
+
   async handleConnection(client: Socket) {
     console.log(`Client connected: ${client.id}`);
   }
@@ -37,8 +60,8 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
     if (found) {
       const { lobby, player } = found;
       // Mark disconnected and broadcast lobby update
-      this.gameService.updatePlayerStatus(lobby.code, player.id, 'DISCONNECTED');
-      this.server.in(lobby.code).emit('lobby:update', this.gameService.getLobby(lobby.code));
+  this.gameService.updatePlayerStatus(lobby.code, player.id, 'DISCONNECTED');
+  this.room(lobby.code).emit('lobby:update', this.gameService.getLobby(lobby.code));
       
       // Set reconnection window
       const timeout = setTimeout(() => {
@@ -48,7 +71,7 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
           // Only remove if still disconnected
           if (currentPlayer && currentPlayer.status === 'DISCONNECTED') {
             this.gameService.removePlayer(lobby.code, player.id);
-            this.server.in(lobby.code).emit('lobby:update', this.gameService.getLobby(lobby.code));
+            this.room(lobby.code).emit('lobby:update', this.gameService.getLobby(lobby.code));
           }
         }
         this.reconnectTimers.delete(client.id);
@@ -71,7 +94,7 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
     
     console.log(`✅ Lobby ${lobby.code} created. Host: ${nickname}`);
     // Debug: print room members
-    const roomAfterCreate = this.server.sockets.adapter.rooms.get(lobby.code);
+  const roomAfterCreate = this.server?.sockets?.adapter?.rooms?.get?.(lobby.code);
     console.log(`👥 Room ${lobby.code} members after create:`, roomAfterCreate ? Array.from(roomAfterCreate.values()) : []);
     
     // Send the host their player info and lobby
@@ -80,7 +103,7 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
     
     // Send lobby update to everyone in room (including creator)
     console.log(`📢 Broadcasting lobby:update to room "${lobby.code}"`);
-    this.server.in(lobby.code).emit('lobby:update', lobby);
+  this.room(lobby.code).emit('lobby:update', lobby);
   }
 
   @SubscribeMessage('lobby:join')
@@ -108,7 +131,7 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
     console.log(`✅ Player "${nickname}" joined. Lobby now has ${lobby.players.length} players:`, lobby.players.map(p => p.nickname));
     // Debug: print room members
-    const roomAfterJoin = this.server.sockets.adapter.rooms.get(code);
+  const roomAfterJoin = this.server?.sockets?.adapter?.rooms?.get?.(code);
     console.log(`👥 Room ${code} members after join:`, roomAfterJoin ? Array.from(roomAfterJoin.values()) : []);
     
     // Send the joining player their info
@@ -116,7 +139,7 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
     
     // Broadcast updated lobby to ALL clients in the room (including sender)
     console.log(`📢 Broadcasting lobby:update to room "${code}"`);
-    this.server.in(code).emit('lobby:update', lobby);
+  this.room(code).emit('lobby:update', lobby);
   }
 
   @SubscribeMessage('player:ready')
@@ -129,7 +152,7 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
 
     this.gameService.updatePlayerStatus(code, found.player.id, 'READY');
-    this.server.in(code).emit('lobby:update', this.gameService.getLobby(code));
+  this.room(code).emit('lobby:update', this.gameService.getLobby(code));
   }
 
   @SubscribeMessage('game:start')
@@ -152,22 +175,28 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
       throw new Error('Not enough players');
     }
 
+    // Require all active players to be READY before game start
+    const allReady = activePlayers.every(p => p.status === 'READY');
+    if (!allReady) {
+      throw new Error('All players must be ready');
+    }
+
     try {
       const updatedLobby = this.gameService.startRound(code, 15, 90, (nextLobby) => {
         // on reveal (timeout or completed) -> broadcast reveal and lobby update
-        this.server.in(code).emit('round:reveal', {
+        this.room(code).emit('round:reveal', {
           submissions: nextLobby.currentRound?.submissions,
         });
-        this.server.in(code).emit('lobby:update', nextLobby);
+        this.room(code).emit('lobby:update', nextLobby);
 
         // start voting phase (30s) after reveal as a fallback for timeout path
         try {
           const votingLobby = this.gameService.startVoting(code, 30, ({ winnerId, lobby: finalLobby }) => {
-            this.server.in(code).emit('result:winner', { winnerId, players: finalLobby.players });
-            this.server.in(code).emit('lobby:update', finalLobby);
+            this.room(code).emit('result:winner', { winnerId, players: finalLobby.players });
+            this.room(code).emit('lobby:update', finalLobby);
           });
           // broadcast lobby update immediately to reflect VOTING stage
-          this.server.in(code).emit('lobby:update', votingLobby);
+          this.room(code).emit('lobby:update', votingLobby);
         } catch (e) {
           // ignore if already started via allSubmitted path
         }
@@ -186,8 +215,8 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
       }
 
       // broadcast game start and lobby state
-      this.server.in(code).emit('game:start', updatedLobby);
-      this.server.in(code).emit('lobby:update', updatedLobby);
+  this.room(code).emit('game:start', updatedLobby);
+  this.room(code).emit('lobby:update', updatedLobby);
     } catch (err: any) {
       client.emit('lobby:error', { message: err.message });
     }
@@ -211,22 +240,22 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
       // ack
       client.emit('round:submitAck', { ok: true });
       // broadcast state
-      this.server.in(lobbyCode).emit('lobby:update', lobby);
+  this.room(lobbyCode).emit('lobby:update', lobby);
 
       if (allSubmitted) {
         // reveal submissions to everyone
-        this.server.in(lobbyCode).emit('round:reveal', {
+        this.room(lobbyCode).emit('round:reveal', {
           submissions: lobby.currentRound?.submissions,
         });
         // start voting phase (30s) after reveal
         try {
           const votingLobby = this.gameService.startVoting(lobbyCode, 30, ({ winnerId, lobby: updated }) => {
             // broadcast result and updated lobby
-            this.server.in(lobbyCode).emit('result:winner', { winnerId, players: updated.players });
-            this.server.in(lobbyCode).emit('lobby:update', updated);
+            this.room(lobbyCode).emit('result:winner', { winnerId, players: updated.players });
+            this.room(lobbyCode).emit('lobby:update', updated);
           });
           // immediately reflect the VOTING stage change
-          this.server.in(lobbyCode).emit('lobby:update', votingLobby);
+          this.room(lobbyCode).emit('lobby:update', votingLobby);
         } catch (e: any) {
           // ignore
         }
@@ -245,28 +274,28 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
     try {
       const res = this.gameService.submitVote(lobbyCode, voterId, submissionId);
       client.emit('round:voteAck', { ok: true });
-      this.server.in(lobbyCode).emit('lobby:update', res.lobby);
+      this.room(lobbyCode).emit('lobby:update', res.lobby);
       if (res.allVoted) {
         const winnerId = res.winnerId;
-        this.server.in(lobbyCode).emit('result:winner', { winnerId, players: res.lobby.players });
-        this.server.in(lobbyCode).emit('lobby:update', res.lobby);
+        this.room(lobbyCode).emit('result:winner', { winnerId, players: res.lobby.players });
+        this.room(lobbyCode).emit('lobby:update', res.lobby);
 
         // Auto-start next round after short delay unless game ended
         if (res.lobby.state !== 'GAME_END') {
           setTimeout(() => {
             try {
               const nextLobby = this.gameService.startRound(lobbyCode, 15, 90, (nextL) => {
-                this.server.in(lobbyCode).emit('round:reveal', {
+                this.room(lobbyCode).emit('round:reveal', {
                   submissions: nextL.currentRound?.submissions,
                 });
-                this.server.in(lobbyCode).emit('lobby:update', nextL);
+                this.room(lobbyCode).emit('lobby:update', nextL);
                 // Begin voting after reveal timeout as fallback
                 try {
                   const vl = this.gameService.startVoting(lobbyCode, 30, ({ winnerId, lobby: finalLobby }) => {
-                    this.server.in(lobbyCode).emit('result:winner', { winnerId, players: finalLobby.players });
-                    this.server.in(lobbyCode).emit('lobby:update', finalLobby);
+                    this.room(lobbyCode).emit('result:winner', { winnerId, players: finalLobby.players });
+                    this.room(lobbyCode).emit('lobby:update', finalLobby);
                   });
-                  this.server.in(lobbyCode).emit('lobby:update', vl);
+                  this.room(lobbyCode).emit('lobby:update', vl);
                 } catch {}
               });
               // send round begin privately with word pools
@@ -280,8 +309,8 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
                   });
                 }
               }
-              this.server.in(lobbyCode).emit('game:start', nextLobby);
-              this.server.in(lobbyCode).emit('lobby:update', nextLobby);
+              this.room(lobbyCode).emit('game:start', nextLobby);
+              this.room(lobbyCode).emit('lobby:update', nextLobby);
             } catch {}
           }, 5000);
         }

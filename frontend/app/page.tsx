@@ -4,10 +4,10 @@ import { useEffect, useState } from 'react';
 import { useGame } from './hooks/useGame';
 import { LobbyCreation } from './components/lobby/LobbyCreation';
 import { PlayerList } from './components/lobby/PlayerList';
-import { GameScreen } from './components/game/GameScreen';
+import { GameBoard } from './components/game/GameBoard';
 
 export default function Page() {
-  const { lobby, error, startGame, setReady, currentPlayer, round } = useGame();
+  const { lobby, error, startGame, setReady, currentPlayer, round, isConnected, isLoading } = useGame();
   
   const isHost = currentPlayer?.id === 1;
   const isPlayerReady = currentPlayer?.status === 'READY';
@@ -15,6 +15,11 @@ export default function Page() {
 
   return (
     <div className="min-h-screen p-8 bg-gray-100">
+      {!isConnected && (
+        <div className="max-w-2xl mx-auto mb-4 p-2 rounded bg-yellow-100 text-yellow-800 text-center text-sm">
+          Reconnecting to server...
+        </div>
+      )}
       <h1 className="text-3xl font-bold text-center mb-8">Ransom Notes Online</h1>
       
       {error && (
@@ -26,7 +31,7 @@ export default function Page() {
       {!lobby ? (
         <LobbyCreation />
       ) : isGameActive ? (
-        <GameScreen />
+        <GameBoard />
       ) : (
         <div className="max-w-2xl mx-auto">
           <div className="bg-white p-6 rounded-lg shadow-md">
@@ -44,9 +49,10 @@ export default function Page() {
                 {!isPlayerReady && (
                   <button 
                     onClick={setReady}
-                    className="w-full bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
+                    disabled={isLoading}
+                    className="w-full bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 disabled:opacity-50"
                   >
-                    Ready Up
+                    {isLoading ? 'Ready…' : 'Ready Up'}
                   </button>
                 )}
                 

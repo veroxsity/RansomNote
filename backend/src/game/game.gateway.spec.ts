@@ -171,8 +171,9 @@ describe('GameGateway', () => {
     });
 
     it('should require minimum players', async () => {
-      // Remove a player
+      // Remove players to leave only one in the lobby
       lobbyService.removePlayer(lobbyCode, 3);
+      lobbyService.removePlayer(lobbyCode, 2);
       
       await expect(gateway.gameStart(hostSocket as Socket))
         .rejects.toThrow('Not enough players');

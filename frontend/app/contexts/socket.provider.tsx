@@ -22,13 +22,15 @@ export const SocketProvider: FC<PropsWithChildren> = ({ children }) => {
       reconnectionDelayMax: 5000,
     });
 
-    // Debug: log all inbound events
-    socketInstance.onAny((event, ...args) => {
-      // Avoid logging noisy internal pings
-      if (event !== 'ping' && event !== 'pong') {
-        console.log('📩 socket event:', event, args?.[0] ?? '');
-      }
-    });
+    // Debug: log all inbound events when enabled
+    const debug = (process.env.NEXT_PUBLIC_DEBUG_SOCKET ?? 'false') === 'true';
+    if (debug) {
+      socketInstance.onAny((event, ...args) => {
+        if (event !== 'ping' && event !== 'pong') {
+          console.log('📩 socket event:', event, args?.[0] ?? '');
+        }
+      });
+    }
 
     socketInstance.on('connect', () => {
       console.log('Connected to Socket.IO server');
