@@ -73,6 +73,8 @@ export class GameService {
 
     lobby.currentRound = round as any;
     lobby.roundNumber = (lobby.roundNumber || 0) + 1;
+    // move lobby into active round state
+    lobby.state = 'ROUND_ACTIVE';
 
     // clear any previous timer
     const prev = this.submissionTimers.get(lobbyCode);
@@ -158,6 +160,8 @@ export class GameService {
     // set stage to VOTING
     lobby.currentRound.stage = 'VOTING';
     lobby.currentRound.voteTime = voteTime;
+    // reflect lobby state change
+    lobby.state = 'VOTING';
 
     // clear existing vote timer
     const prev = this.voteTimers.get(lobbyCode);
@@ -285,8 +289,10 @@ export class GameService {
       }
     }
 
-    // mark round complete
+  // mark round complete
     round.stage = 'COMPLETE';
+  // reflect end-of-round state unless the game ends below
+  lobby.state = 'ROUND_END';
 
     // check win condition
     const someoneWon = lobby.players.find((p) => p.score >= this.WIN_THRESHOLD);
