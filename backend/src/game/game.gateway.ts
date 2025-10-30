@@ -93,6 +93,15 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
       throw new Error('Invalid nickname');
     }
 
+    // Restrict late joins during active gameplay
+    const existingLobby = this.gameService.getLobby(code);
+    if (!existingLobby) {
+      throw new Error('Lobby not found');
+    }
+    if (existingLobby.state !== 'WAITING_FOR_PLAYERS') {
+      return client.emit('lobby:error', { message: 'Cannot join while a round is active' });
+    }
+
     // Get lobby and join
   const { lobby, player } = this.gameService.joinLobby(code, nickname, client.id);
   await client.join(code);
@@ -150,6 +159,18 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
           submissions: nextLobby.currentRound?.submissions,
         });
         this.server.in(code).emit('lobby:update', nextLobby);
+
+        // start voting phase (30s) after reveal as a fallback for timeout path
+        try {
+          const votingLobby = this.gameService.startVoting(code, 30, ({ winnerId, lobby: finalLobby }) => {
+            this.server.in(code).emit('result:winner', { winnerId, players: finalLobby.players });
+            this.server.in(code).emit('lobby:update', finalLobby);
+          });
+          // broadcast lobby update immediately to reflect VOTING stage
+          this.server.in(code).emit('lobby:update', votingLobby);
+        } catch (e) {
+          // ignore if already started via allSubmitted path
+        }
       });
 
       // send each player their prompt + word pool privately
@@ -199,11 +220,13 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
         });
         // start voting phase (30s) after reveal
         try {
-          this.gameService.startVoting(lobbyCode, 30, ({ winnerId, lobby: updated }) => {
+          const votingLobby = this.gameService.startVoting(lobbyCode, 30, ({ winnerId, lobby: updated }) => {
             // broadcast result and updated lobby
             this.server.in(lobbyCode).emit('result:winner', { winnerId, players: updated.players });
             this.server.in(lobbyCode).emit('lobby:update', updated);
           });
+          // immediately reflect the VOTING stage change
+          this.server.in(lobbyCode).emit('lobby:update', votingLobby);
         } catch (e: any) {
           // ignore
         }
@@ -227,6 +250,41 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
         const winnerId = res.winnerId;
         this.server.in(lobbyCode).emit('result:winner', { winnerId, players: res.lobby.players });
         this.server.in(lobbyCode).emit('lobby:update', res.lobby);
+
+        // Auto-start next round after short delay unless game ended
+        if (res.lobby.state !== 'GAME_END') {
+          setTimeout(() => {
+            try {
+              const nextLobby = this.gameService.startRound(lobbyCode, 15, 90, (nextL) => {
+                this.server.in(lobbyCode).emit('round:reveal', {
+                  submissions: nextL.currentRound?.submissions,
+                });
+                this.server.in(lobbyCode).emit('lobby:update', nextL);
+                // Begin voting after reveal timeout as fallback
+                try {
+                  const vl = this.gameService.startVoting(lobbyCode, 30, ({ winnerId, lobby: finalLobby }) => {
+                    this.server.in(lobbyCode).emit('result:winner', { winnerId, players: finalLobby.players });
+                    this.server.in(lobbyCode).emit('lobby:update', finalLobby);
+                  });
+                  this.server.in(lobbyCode).emit('lobby:update', vl);
+                } catch {}
+              });
+              // send round begin privately with word pools
+              for (const player of nextLobby.players) {
+                if (player.socketId) {
+                  this.server.to(player.socketId).emit('round:begin', {
+                    prompt: nextLobby.currentRound?.prompt,
+                    words: player.words,
+                    timeLimit: nextLobby.currentRound?.submissionTime ?? 90,
+                    roundNumber: nextLobby.roundNumber,
+                  });
+                }
+              }
+              this.server.in(lobbyCode).emit('game:start', nextLobby);
+              this.server.in(lobbyCode).emit('lobby:update', nextLobby);
+            } catch {}
+          }, 5000);
+        }
       }
     } catch (err: any) {
       client.emit('round:voteAck', { ok: false, message: err.message });

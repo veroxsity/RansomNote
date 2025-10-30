@@ -121,9 +121,15 @@ export class GameService {
     if (!round) throw new Error('No active round');
     if (round.stage !== 'ANSWERING') throw new Error('Not accepting answers');
 
-    // validate each word is in player's assigned pool
-    const valid = answer.every((w) => player.words.includes(w));
-    if (!valid) throw new Error('Invalid submission — uses words not in your pool');
+    // validate each word is in player's assigned pool with multiplicity (count) respected
+    const poolCounts: Record<string, number> = {};
+    for (const w of player.words) poolCounts[w] = (poolCounts[w] || 0) + 1;
+    for (const w of answer) {
+      if (!poolCounts[w]) {
+        throw new Error('Invalid submission — uses words not in your pool or too many repeats');
+      }
+      poolCounts[w] -= 1;
+    }
 
     round.submissions[playerId] = answer;
 

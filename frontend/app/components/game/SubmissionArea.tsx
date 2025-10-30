@@ -3,10 +3,11 @@
 interface SubmissionAreaProps {
   words: string[];
   onRemove: (index: number) => void;
+  onMove?: (from: number, to: number) => void;
   onSubmit: () => void;
 }
 
-export const SubmissionArea = ({ words, onRemove, onSubmit }: SubmissionAreaProps) => {
+export const SubmissionArea = ({ words, onRemove, onMove, onSubmit }: SubmissionAreaProps) => {
   return (
     <div className="mb-6">
       <h3 className="text-lg font-semibold mb-3">Your Answer</h3>
@@ -16,14 +17,35 @@ export const SubmissionArea = ({ words, onRemove, onSubmit }: SubmissionAreaProp
         ) : (
           <div className="flex flex-wrap gap-2">
             {words.map((word, index) => (
-              <button
-                key={index}
-                onClick={() => onRemove(index)}
-                className="px-3 py-1 bg-green-500 text-white rounded-md hover:bg-red-500 transition-colors"
-                title="Click to remove"
-              >
-                {word}
-              </button>
+              <div key={index} className="flex items-center gap-2">
+                <button
+                  onClick={() => onRemove(index)}
+                  className="px-3 py-1 bg-green-500 text-white rounded-md hover:bg-red-500 transition-colors"
+                  title="Click to remove"
+                >
+                  {word}
+                </button>
+                {onMove && (
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => onMove(index, Math.max(0, index - 1))}
+                      disabled={index === 0}
+                      className="px-2 py-1 text-xs bg-gray-200 rounded disabled:opacity-50"
+                      title="Move left"
+                    >
+                      ↑
+                    </button>
+                    <button
+                      onClick={() => onMove(index, Math.min(words.length - 1, index + 1))}
+                      disabled={index === words.length - 1}
+                      className="px-2 py-1 text-xs bg-gray-200 rounded disabled:opacity-50"
+                      title="Move right"
+                    >
+                      ↓
+                    </button>
+                  </div>
+                )}
+              </div>
             ))}
           </div>
         )}

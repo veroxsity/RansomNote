@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useGame } from './hooks/useGame';
 import { LobbyCreation } from './components/lobby/LobbyCreation';
 import { PlayerList } from './components/lobby/PlayerList';
-import { GameBoard } from './components/game/GameBoard';
+import { GameScreen } from './components/game/GameScreen';
 
 export default function Page() {
   const { lobby, error, startGame, setReady, currentPlayer, round } = useGame();
@@ -26,7 +26,7 @@ export default function Page() {
       {!lobby ? (
         <LobbyCreation />
       ) : isGameActive ? (
-        <GameBoard />
+        <GameScreen />
       ) : (
         <div className="max-w-2xl mx-auto">
           <div className="bg-white p-6 rounded-lg shadow-md">

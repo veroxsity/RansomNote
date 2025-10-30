@@ -16,6 +16,7 @@ export const VotingUI = ({ submissions, players, currentPlayerId }: VotingUIProp
 
   const handleVote = (playerId: number) => {
     if (playerId === currentPlayerId) return; // Can't vote for self
+    if (selectedSubmission !== null) return; // already voted
     setSelectedSubmission(playerId);
     submitVote(playerId);
   };
