@@ -24,11 +24,23 @@ export const useGame = () => {
   useEffect(() => {
     if (!socket) return;
 
-    socket.on('lobby:update', (lobby: Lobby) => {
-      setState(prev => ({ ...prev, lobby }));
-    });
+    const onLobbyUpdate = (lobby: Lobby) => {
+      console.log('🔄 Lobby update received:', lobby);
+      setState(prev => ({ ...prev, lobby, isLoading: false }));
+    };
 
-    socket.on('round:begin', (data: { prompt: string; words: string[]; timeLimit: number }) => {
+    const onLobbyJoined = (data: { lobby: Lobby; player: Player }) => {
+      console.log('✅ Lobby joined:', data);
+      setState(prev => ({
+        ...prev,
+        lobby: data.lobby,
+        currentPlayer: data.player,
+        isLoading: false,
+      }));
+    };
+
+    const onRoundBegin = (data: { prompt: string; words: string[]; timeLimit: number }) => {
+      console.log('🎮 Round begin:', data);
       setState(prev => ({
         ...prev,
         round: {
@@ -36,12 +48,13 @@ export const useGame = () => {
           submissions: {},
           votes: {},
           stage: 'ANSWERING',
-          timeLimit: data.timeLimit,
+          submissionTime: data.timeLimit,
         },
       }));
-    });
+    };
 
-    socket.on('round:reveal', (data: { submissions: Record<number, string[]> }) => {
+    const onRoundReveal = (data: { submissions: Record<number, string[]> }) => {
+      console.log('👀 Round reveal:', data);
       setState(prev => ({
         ...prev,
         round: prev.round ? {
@@ -50,50 +63,51 @@ export const useGame = () => {
           stage: 'REVEALING',
         } : null,
       }));
-    });
+    };
 
-    socket.on('lobby:error', (data: { message: string }) => {
-      setState(prev => ({ ...prev, error: data.message }));
-    });
+    const onLobbyError = (data: { message: string }) => {
+      console.error('❌ Lobby error:', data.message);
+      setState(prev => ({ ...prev, error: data.message, isLoading: false }));
+    };
+
+    socket.on('lobby:update', onLobbyUpdate);
+    socket.on('lobby:joined', onLobbyJoined);
+    socket.on('round:begin', onRoundBegin);
+    socket.on('round:reveal', onRoundReveal);
+    socket.on('lobby:error', onLobbyError);
 
     return () => {
-      socket.off('lobby:update');
-      socket.off('round:begin');
-      socket.off('round:reveal');
-      socket.off('lobby:error');
+      socket.off('lobby:update', onLobbyUpdate);
+      socket.off('lobby:joined', onLobbyJoined);
+      socket.off('round:begin', onRoundBegin);
+      socket.off('round:reveal', onRoundReveal);
+      socket.off('lobby:error', onLobbyError);
     };
   }, [socket]);
 
   // Actions
   const createLobby = useCallback((nickname: string) => {
     if (!socket) return;
+    console.log('📝 Creating lobby with nickname:', nickname);
     setState(prev => ({ ...prev, isLoading: true, error: null }));
-    socket.emit('lobby:create', { nickname }, (response: any) => {
-      if (response.error) {
-        setState(prev => ({ ...prev, error: response.error, isLoading: false }));
-      }
-    });
+    socket.emit('lobby:create', { nickname });
   }, [socket]);
 
   const joinLobby = useCallback((code: string, nickname: string) => {
     if (!socket) return;
+    console.log('🚪 Joining lobby:', code, 'with nickname:', nickname);
     setState(prev => ({ ...prev, isLoading: true, error: null }));
-    socket.emit('lobby:join', { code, nickname }, (response: any) => {
-      if (response.error) {
-        setState(prev => ({ ...prev, error: response.error, isLoading: false }));
-      } else {
-        setState(prev => ({
-          ...prev,
-          currentPlayer: response.player,
-          isLoading: false,
-        }));
-      }
-    });
+    socket.emit('lobby:join', { code, nickname });
   }, [socket]);
 
   const startGame = useCallback(() => {
     if (!socket || !state.lobby) return;
     socket.emit('game:start', { code: state.lobby.code });
+  }, [socket, state.lobby]);
+
+  const setReady = useCallback(() => {
+    if (!socket || !state.lobby) return;
+    socket.emit('player:ready', { code: state.lobby.code });
   }, [socket, state.lobby]);
 
   const submitAnswer = useCallback((answer: string[]) => {
@@ -120,6 +134,7 @@ export const useGame = () => {
     createLobby,
     joinLobby,
     startGame,
+    setReady,
     submitAnswer,
     submitVote,
   };

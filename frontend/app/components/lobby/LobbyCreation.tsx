@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useGame } from '../hooks/useGame';
+import { useGame } from '../../hooks/useGame';
 
 export const LobbyCreation = () => {
   const [nickname, setNickname] = useState('');

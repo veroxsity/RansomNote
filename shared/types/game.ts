@@ -1,5 +1,4 @@
-export type GameState = 'LOBBY_CREATED' | 'WAITING_FOR_PLAYERS' | 'IN_PROGRESS' | 'ROUND_ACTIVE' | 'VOTING' | 'ROUND_END' | 'GAME_END';
-export type LobbyState = GameState;
+export type LobbyState = 'WAITING_FOR_PLAYERS' | 'IN_PROGRESS' | 'ROUND_ACTIVE' | 'VOTING' | 'ROUND_END' | 'GAME_END';
 
 export interface Player {
   id: number
@@ -21,13 +20,11 @@ export interface Lobby {
 
 export interface Round {
   prompt: string;
-  submissions: Record<number, string[]>;  // playerID → ordered word IDs
-  votes: Record<number, number>;         // voterID → submissionID
+  submissions: Record<number, string[]>;  // playerID → ordered words
+  votes: Record<number, number>;          // voterID → submissionID
   stage: 'ANSWERING' | 'VOTING' | 'REVEALING' | 'COMPLETE';
-  timeLimit: number;
   submissionTime?: number;
   voteTime?: number;
-  judgeId?: number | null;
 }
 
 // Socket event payloads

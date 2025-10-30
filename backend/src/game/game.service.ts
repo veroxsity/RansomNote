@@ -291,7 +291,7 @@ export class GameService {
     // check win condition
     const someoneWon = lobby.players.find((p) => p.score >= this.WIN_THRESHOLD);
     if (someoneWon) {
-      lobby.state = 'ENDED' as const;
+      lobby.state = 'GAME_END';
     } else {
       // advance judgeIndex if present
       if (lobby.judgeIndex == null) {

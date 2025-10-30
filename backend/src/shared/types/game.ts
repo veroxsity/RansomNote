@@ -1,4 +1,4 @@
-export type LobbyState = 'WAITING' | 'IN_PROGRESS' | 'ROUND_ACTIVE' | 'VOTING' | 'ROUND_END' | 'GAME_END' | 'ENDED';
+export type LobbyState = 'WAITING_FOR_PLAYERS' | 'IN_PROGRESS' | 'ROUND_ACTIVE' | 'VOTING' | 'ROUND_END' | 'GAME_END';
 
 export interface Player {
   id: number;
@@ -20,11 +20,9 @@ export interface Lobby {
 
 export interface Round {
   prompt: string;
-  submissions: Record<number, string[]>;  // playerID → ordered word IDs
+  submissions: Record<number, string[]>;  // playerID → ordered words
   votes: Record<number, number>;          // voterID → submissionID
   stage: 'ANSWERING' | 'VOTING' | 'REVEALING' | 'COMPLETE';
   submissionTime?: number;
   voteTime?: number;
-  judgeId?: number | null;
-  timeLimit?: number;
 }

@@ -14,12 +14,16 @@ import { GameService } from './game.service';
   cors: {
     origin:
       process.env.NODE_ENV === 'production'
-        ? 'https://ransomnotes.example.com' // Update with real production domain
-        : 'http://localhost:3000',
+        ? ['https://ransomnotes.example.com'] // Update with real production domain
+        : ['http://localhost:3000'],
+    methods: ['GET', 'POST'],
+    credentials: true,
   },
 })
 export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer() server: Server;
+  private reconnectTimers: Map<string, NodeJS.Timeout> = new Map();
+  private readonly RECONNECT_WINDOW_MS = 30000; // 30 seconds
 
   constructor(private readonly gameService: GameService) {}
 
@@ -34,38 +38,89 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
       const { lobby, player } = found;
       // Mark disconnected and broadcast lobby update
       this.gameService.updatePlayerStatus(lobby.code, player.id, 'DISCONNECTED');
-      this.server.to(lobby.code).emit('lobby:update', this.gameService.getLobby(lobby.code));
-      // Optionally remove player after reconnect window (handled elsewhere)
+      this.server.in(lobby.code).emit('lobby:update', this.gameService.getLobby(lobby.code));
+      
+      // Set reconnection window
+      const timeout = setTimeout(() => {
+        const currentLobby = this.gameService.getLobby(lobby.code);
+        if (currentLobby) {
+          const currentPlayer = currentLobby.players.find(p => p.id === player.id);
+          // Only remove if still disconnected
+          if (currentPlayer && currentPlayer.status === 'DISCONNECTED') {
+            this.gameService.removePlayer(lobby.code, player.id);
+            this.server.in(lobby.code).emit('lobby:update', this.gameService.getLobby(lobby.code));
+          }
+        }
+        this.reconnectTimers.delete(client.id);
+      }, this.RECONNECT_WINDOW_MS);
+      
+      this.reconnectTimers.set(client.id, timeout);
     }
   }
 
   @SubscribeMessage('lobby:create')
   async handleCreate(@MessageBody() payload: { nickname: string }, @ConnectedSocket() client: Socket) {
     const { nickname } = payload;
+    console.log(`📝 Creating lobby for "${nickname}"`);
+    
     if (!nickname || nickname.trim().length === 0) {
       throw new Error('Invalid nickname');
     }
-    const lobby = this.gameService.createLobby(nickname, client.id);
-    client.join(lobby.code);
+  const lobby = this.gameService.createLobby(nickname, client.id);
+  await client.join(lobby.code);
+    
+    console.log(`✅ Lobby ${lobby.code} created. Host: ${nickname}`);
+    // Debug: print room members
+    const roomAfterCreate = this.server.sockets.adapter.rooms.get(lobby.code);
+    console.log(`👥 Room ${lobby.code} members after create:`, roomAfterCreate ? Array.from(roomAfterCreate.values()) : []);
+    
+    // Send the host their player info and lobby
+    const hostPlayer = lobby.players[0]; // Host is always first player
+    client.emit('lobby:joined', { lobby, player: hostPlayer });
+    
     // Send lobby update to everyone in room (including creator)
-    this.server.to(lobby.code).emit('lobby:update', lobby);
+    console.log(`📢 Broadcasting lobby:update to room "${lobby.code}"`);
+    this.server.in(lobby.code).emit('lobby:update', lobby);
   }
 
   @SubscribeMessage('lobby:join')
   async handleJoin(@MessageBody() payload: { code: string; nickname: string }, @ConnectedSocket() client: Socket) {
     const { code, nickname } = payload;
     
+    console.log(`🚪 Player "${nickname}" joining lobby ${code}`);
+    
     if (!nickname || nickname.trim().length === 0) {
       throw new Error('Invalid nickname');
     }
 
     // Get lobby and join
-    const { lobby, player } = this.gameService.joinLobby(code, nickname, client.id);
-    client.join(code);
+  const { lobby, player } = this.gameService.joinLobby(code, nickname, client.id);
+  await client.join(code);
 
-    // Emit updates to all clients in room
+    console.log(`✅ Player "${nickname}" joined. Lobby now has ${lobby.players.length} players:`, lobby.players.map(p => p.nickname));
+    // Debug: print room members
+    const roomAfterJoin = this.server.sockets.adapter.rooms.get(code);
+    console.log(`👥 Room ${code} members after join:`, roomAfterJoin ? Array.from(roomAfterJoin.values()) : []);
+    
+    // Send the joining player their info
     client.emit('lobby:joined', { lobby, player });
-    this.server.to(code).emit('lobby:update', lobby);
+    
+    // Broadcast updated lobby to ALL clients in the room (including sender)
+    console.log(`📢 Broadcasting lobby:update to room "${code}"`);
+    this.server.in(code).emit('lobby:update', lobby);
+  }
+
+  @SubscribeMessage('player:ready')
+  async handlePlayerReady(@MessageBody() payload: { code: string }, @ConnectedSocket() client: Socket) {
+    const { code } = payload;
+    const found = this.gameService.findPlayerBySocket(client.id);
+    
+    if (!found || found.lobby.code !== code) {
+      throw new Error('Player not found in lobby');
+    }
+
+    this.gameService.updatePlayerStatus(code, found.player.id, 'READY');
+    this.server.in(code).emit('lobby:update', this.gameService.getLobby(code));
   }
 
   @SubscribeMessage('game:start')
@@ -82,25 +137,19 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
       throw new Error('Only host can start game');
     }
 
-    // Check minimum players (3+)
+    // Check minimum players (2+)
     const activePlayers = lobby.players.filter(p => p.status !== 'DISCONNECTED');
-    if (activePlayers.length < 3) {
+    if (activePlayers.length < 2) {
       throw new Error('Not enough players');
-    }
-
-    // Check all players ready
-    const allReady = activePlayers.every(p => p.status === 'READY');
-    if (!allReady) {
-      throw new Error('All players must be ready');
     }
 
     try {
       const updatedLobby = this.gameService.startRound(code, 15, 90, (nextLobby) => {
         // on reveal (timeout or completed) -> broadcast reveal and lobby update
-        this.server.to(code).emit('round:reveal', {
+        this.server.in(code).emit('round:reveal', {
           submissions: nextLobby.currentRound?.submissions,
         });
-        this.server.to(code).emit('lobby:update', nextLobby);
+        this.server.in(code).emit('lobby:update', nextLobby);
       });
 
       // send each player their prompt + word pool privately
@@ -116,8 +165,8 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
       }
 
       // broadcast game start and lobby state
-      this.server.to(code).emit('game:start', updatedLobby);
-      this.server.to(code).emit('lobby:update', updatedLobby);
+      this.server.in(code).emit('game:start', updatedLobby);
+      this.server.in(code).emit('lobby:update', updatedLobby);
     } catch (err: any) {
       client.emit('lobby:error', { message: err.message });
     }
@@ -141,19 +190,19 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
       // ack
       client.emit('round:submitAck', { ok: true });
       // broadcast state
-      this.server.to(lobbyCode).emit('lobby:update', lobby);
+      this.server.in(lobbyCode).emit('lobby:update', lobby);
 
       if (allSubmitted) {
         // reveal submissions to everyone
-        this.server.to(lobbyCode).emit('round:reveal', {
+        this.server.in(lobbyCode).emit('round:reveal', {
           submissions: lobby.currentRound?.submissions,
         });
         // start voting phase (30s) after reveal
         try {
           this.gameService.startVoting(lobbyCode, 30, ({ winnerId, lobby: updated }) => {
             // broadcast result and updated lobby
-            this.server.to(lobbyCode).emit('result:winner', { winnerId, players: updated.players });
-            this.server.to(lobbyCode).emit('lobby:update', updated);
+            this.server.in(lobbyCode).emit('result:winner', { winnerId, players: updated.players });
+            this.server.in(lobbyCode).emit('lobby:update', updated);
           });
         } catch (e: any) {
           // ignore
@@ -173,11 +222,11 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
     try {
       const res = this.gameService.submitVote(lobbyCode, voterId, submissionId);
       client.emit('round:voteAck', { ok: true });
-      this.server.to(lobbyCode).emit('lobby:update', res.lobby);
+      this.server.in(lobbyCode).emit('lobby:update', res.lobby);
       if (res.allVoted) {
         const winnerId = res.winnerId;
-        this.server.to(lobbyCode).emit('result:winner', { winnerId, players: res.lobby.players });
-        this.server.to(lobbyCode).emit('lobby:update', res.lobby);
+        this.server.in(lobbyCode).emit('result:winner', { winnerId, players: res.lobby.players });
+        this.server.in(lobbyCode).emit('lobby:update', res.lobby);
       }
     } catch (err: any) {
       client.emit('round:voteAck', { ok: false, message: err.message });
