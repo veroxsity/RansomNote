@@ -7,8 +7,8 @@ interface Props {
 
 export const PlayerList = ({ players, judgeIndex }: Props) => {
   return (
-    <div className="mt-6">
-      <h2 className="text-lg font-medium mb-3">Players</h2>
+    <div className="mt-4 sm:mt-6">
+      <h2 className="text-base sm:text-lg font-medium mb-2 sm:mb-3">Players</h2>
       <ul className="space-y-2">
         {players.map((player, index) => (
           <li
@@ -17,21 +17,21 @@ export const PlayerList = ({ players, judgeIndex }: Props) => {
               judgeIndex === index ? 'bg-yellow-100' : 'bg-gray-100'
             }`}
           >
-            <div className="flex items-center">
+            <div className="flex items-center min-w-0 flex-1">
               {judgeIndex === index && (
-                <span className="text-yellow-600 mr-2">👑</span>
+                <span className="text-yellow-600 mr-2 text-lg sm:text-base">👑</span>
               )}
-              <span className="font-medium">{player.nickname}</span>
+              <span className="font-medium truncate text-sm sm:text-base">{player.nickname}</span>
               {player.status === 'DISCONNECTED' && (
-                <span className="ml-2 text-sm text-gray-500">(Disconnected)</span>
+                <span className="ml-2 text-xs sm:text-sm text-gray-500 flex-shrink-0">(Disconnected)</span>
               )}
               {player.status === 'READY' && (
-                <span className="ml-2 inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">
+                <span className="ml-2 inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700 flex-shrink-0">
                   Ready
                 </span>
               )}
             </div>
-            <span className="text-lg font-semibold">{player.score}</span>
+            <span className="text-base sm:text-lg font-semibold ml-2 flex-shrink-0">{player.score}</span>
           </li>
         ))}
       </ul>

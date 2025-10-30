@@ -62,6 +62,29 @@ npm install
 npm run dev
 ```
 
+### One-command launcher with custom ports/host
+
+You can start both frontend and backend with a single CLI that lets you choose ports and binding:
+
+```bash
+# From repo root
+./app --fport 3000 --bport 3001 --local yes
+```
+
+Options:
+- --fport <port>  Frontend port (Next.js dev), default 3000
+- --bport <port>  Backend port (NestJS dev), default 3001
+- --local yes|no  yes binds to localhost only; no binds to 0.0.0.0 (all interfaces)
+
+Notes:
+- In local=yes, the frontend will talk to the backend at http://localhost:<bport> and CORS will allow http://localhost:<fport>.
+- In local=no, the backend allows any origin in dev (CORS "*"); the frontend auto-targets the backend at your current hostname and the provided backend port.
+- If your shell doesn’t allow executing ./app directly, you can run the same via:
+
+```bash
+npm run app -- --fport 3000 --bport 3001 --local no
+```
+
 ## Scripts
 
 Backend:

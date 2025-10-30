@@ -33,8 +33,8 @@ export const VotingUI = ({ submissions, players, currentPlayerId, judgeIndex }: 
   };
 
   return (
-    <div className="space-y-4">
-      <h3 className="text-xl font-semibold mb-4">
+    <div className="space-y-3 sm:space-y-4">
+      <h3 className="text-lg sm:text-xl font-semibold mb-3 sm:mb-4">
         {mode === 'judge' ? (isJudge ? 'Pick the Winner' : 'Waiting for the judge…') : 'Vote for the Best Answer'}
       </h3>
       
@@ -54,23 +54,23 @@ export const VotingUI = ({ submissions, players, currentPlayerId, judgeIndex }: 
         return (
           <div
             key={playerId}
-            className={`p-4 rounded-md border-2 transition-all ${
+            className={`p-3 sm:p-4 rounded-md border-2 transition-all min-h-[60px] ${
               isSelf
                 ? 'bg-gray-100 border-gray-300 cursor-not-allowed'
                 : isSelected
                 ? 'bg-green-100 border-green-500'
                 : isClickable
-                ? 'bg-white border-gray-300 hover:border-blue-500 cursor-pointer'
+                ? 'bg-white border-gray-300 hover:border-blue-500 active:border-blue-600 cursor-pointer'
                 : 'bg-white border-gray-200 cursor-not-allowed opacity-80'
             }`}
             onClick={handleClick}
           >
-            <p className="font-semibold text-sm text-gray-600 mb-2">
+            <p className="font-semibold text-xs sm:text-sm text-gray-600 mb-1 sm:mb-2">
               {player?.nickname} {isSelf && '(You)'}
             </p>
-            <p className="text-lg">{words.join(' ')}</p>
+            <p className="text-base sm:text-lg break-words">{words.join(' ')}</p>
             {isSelected && (
-              <p className="text-green-600 font-semibold mt-2">{mode === 'judge' ? '✓ Picked' : '✓ Voted'}</p>
+              <p className="text-green-600 font-semibold mt-2 text-sm sm:text-base">{mode === 'judge' ? '✓ Picked' : '✓ Voted'}</p>
             )}
           </div>
         );
