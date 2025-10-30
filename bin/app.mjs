@@ -7,23 +7,27 @@ import blessed from 'blessed';
 import os from 'node:os';
 
 function parseArgs(argv) {
-  const args = { fport: 3000, bport: 3001, local: 'yes' };
+  const args = { fport: 3000, bport: 3001, local: 'yes', furl: null, burl: null };
   for (let i = 2; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--fport' && argv[i + 1]) args.fport = Number(argv[++i]);
     else if (a === '--bport' && argv[i + 1]) args.bport = Number(argv[++i]);
     else if (a === '--local' && argv[i + 1]) args.local = String(argv[++i]).toLowerCase();
+    else if (a === '--furl' && argv[i + 1]) args.furl = String(argv[++i]);
+    else if (a === '--burl' && argv[i + 1]) args.burl = String(argv[++i]);
     else if (a === '-h' || a === '--help') args.help = true;
   }
   return args;
 }
 
 function printHelp() {
-  console.log(`Usage: app [--fport <port>] [--bport <port>] [--local yes|no]\n\n` +
+  console.log(`Usage: app [--fport <port>] [--bport <port>] [--local yes|no] [--furl <frontend-url>] [--burl <backend-url>]\n\n` +
 `Options:\n` +
 `  --fport <port>   Frontend port (Next.js dev) [default: 3000]\n` +
 `  --bport <port>   Backend port (NestJS dev)   [default: 3001]\n` +
-`  --local yes|no   yes = bind to localhost only; no = bind on 0.0.0.0 [default: yes]\n`);
+`  --local yes|no   yes = bind to localhost only; no = bind on 0.0.0.0 [default: yes]\n` +
+`  --furl <url>     Public frontend URL (for dashboard/info, e.g. https://my.site)\n` +
+`  --burl <url>     Public backend URL (for dashboard/info, e.g. https://api.site)\n`);
 }
 
 function getNetworkIPs() {
@@ -57,9 +61,18 @@ function run() {
   const frontendOrigin = isLocal ? `http://localhost:${args.fport}` : '*';
 
   // Frontend socket URL
-  const nextEnv = isLocal
-    ? { NEXT_PUBLIC_SOCKET_URL: `http://localhost:${args.bport}` }
-    : { NEXT_PUBLIC_SOCKET_URL: 'auto', NEXT_PUBLIC_BACKEND_PORT: String(args.bport) };
+  let nextEnv;
+  if (args.furl && args.burl) {
+    nextEnv = {
+      NEXT_PUBLIC_SOCKET_URL: args.burl,
+      NEXT_PUBLIC_BACKEND_PORT: String(args.bport),
+      NEXT_PUBLIC_PUBLIC_URL: args.furl,
+    };
+  } else if (isLocal) {
+    nextEnv = { NEXT_PUBLIC_SOCKET_URL: `http://localhost:${args.bport}` };
+  } else {
+    nextEnv = { NEXT_PUBLIC_SOCKET_URL: 'auto', NEXT_PUBLIC_BACKEND_PORT: String(args.bport) };
+  }
 
   // Create blessed screen
   const screen = blessed.screen({
@@ -84,8 +97,16 @@ function run() {
 
   const networkIPs = getNetworkIPs();
   let infoContent = `{bold}Ransom Notes - Dev Dashboard{/bold}\n\n`;
-  infoContent += `Frontend: http://${host}:${args.fport}\n`;
-  infoContent += `Backend:  http://${host}:${args.bport}\n`;
+  if (args.furl) {
+    infoContent += `Frontend: ${args.furl}\n`;
+  } else {
+    infoContent += `Frontend: http://${host}:${args.fport}\n`;
+  }
+  if (args.burl) {
+    infoContent += `Backend:  ${args.burl}\n`;
+  } else {
+    infoContent += `Backend:  http://${host}:${args.bport}\n`;
+  }
   if (!isLocal && networkIPs.length > 0) {
     infoContent += `Network:  `;
     networkIPs.forEach((ip, i) => {
@@ -160,6 +181,7 @@ function run() {
       PORT: String(args.bport),
       HOST: host,
       FRONTEND_ORIGIN: frontendOrigin,
+      PUBLIC_URL: args.burl || '',
     },
   });
 
