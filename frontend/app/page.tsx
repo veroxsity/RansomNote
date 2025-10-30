@@ -50,7 +50,7 @@ export default function Page() {
                   </button>
                 )}
                 
-                {isHost && lobby.players.length >= 3 && (
+                {isHost && lobby.players.length >= 2 && (
                   <button 
                     onClick={startGame}
                     className="w-full bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600"
@@ -60,7 +60,10 @@ export default function Page() {
                 )}
                 
                 <p className="text-sm text-gray-600 text-center mt-2">
-                  {lobby.players.length} / 8 players • Minimum 3 players to start
+                  {lobby.players.length} / 8 players • Minimum 2 players to start
+                </p>
+                <p className="text-xs text-gray-500 text-center">
+                  {lobby.players.filter(p => p.status === 'READY').length} ready
                 </p>
               </div>
             )}
