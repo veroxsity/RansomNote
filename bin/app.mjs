@@ -173,8 +173,34 @@ function run() {
     return process.exit(0);
   });
 
+  // Child process references (declare early so cleanup always sees them)
+  let be = null;
+  let fe = null;
+
+  // Helper: kill a child process and its process group (Unix)
+  const killChild = (child) => {
+    if (!child || child.killed) return;
+    try {
+      // Try killing the whole process group (works on Unix)
+      process.kill(-child.pid, 'SIGTERM');
+    } catch (err) {
+      try { child.kill('SIGTERM'); } catch (e) {}
+    }
+  };
+
+  // Cleanup handler to stop children
+  const cleanup = () => {
+    try { killChild(be); } catch (e) {}
+    try { killChild(fe); } catch (e) {}
+  };
+
+  // Register exit handlers early so Ctrl+C always triggers cleanup
+  process.on('exit', cleanup);
+  process.on('SIGINT', () => { cleanup(); process.exit(0); });
+  process.on('SIGTERM', () => { cleanup(); process.exit(0); });
+
   // Start backend
-  const be = spawn('npm', ['run', 'dev'], {
+  be = spawn('npm', ['run', 'dev'], {
     cwd: backendDir,
     env: {
       ...process.env,
@@ -183,6 +209,8 @@ function run() {
       FRONTEND_ORIGIN: frontendOrigin,
       PUBLIC_URL: args.burl || '',
     },
+    // create a new process group so we can kill children reliably
+    detached: true,
   });
 
   be.stdout.on('data', (data) => {
@@ -203,12 +231,13 @@ function run() {
   // Start frontend after slight delay
   setTimeout(() => {
     const feEnvArr = Object.entries(nextEnv).map(([k, v]) => [k, v]);
-    const fe = spawn('npx', ['next', 'dev', '-p', String(args.fport), '--hostname', host], {
+    fe = spawn('npx', ['next', 'dev', '-p', String(args.fport), '--hostname', host], {
       cwd: frontendDir,
       env: {
         ...process.env,
         ...Object.fromEntries(feEnvArr),
       },
+      detached: true,
     });
 
     fe.stdout.on('data', (data) => {
@@ -226,14 +255,7 @@ function run() {
       screen.render();
     });
 
-    // Kill processes on exit
-    const cleanup = () => {
-      try { be.kill(); } catch {}
-      try { fe.kill(); } catch {}
-    };
-    process.on('exit', cleanup);
-    process.on('SIGINT', cleanup);
-    process.on('SIGTERM', cleanup);
+    // When child exits, log and render
   }, 500);
 
   screen.render();

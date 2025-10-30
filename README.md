@@ -85,6 +85,38 @@ Notes:
 npm run app -- --fport 3000 --bport 3001 --local no
 ```
 
+Stopping the one-command launcher
+---------------------------------
+
+The included one-command launcher (`./bin/app.mjs`, run via `./app`) starts both the Next.js frontend and the NestJS backend in development mode and shows their output in a single TUI. The launcher registers signal handlers so pressing Ctrl+C (SIGINT) will now cleanly shut down both dev servers and any child processes they spawned on Linux/macOS.
+
+Quick verify after Ctrl+C
+
+1. Start the launcher:
+
+```bash
+./app --fport 3000 --bport 3001 --local yes
+```
+
+2. Press Ctrl+C to stop the launcher. Both servers should terminate.
+
+3. Confirm no processes are still listening on the dev ports (Linux example):
+
+```bash
+ss -ltnp | grep -E ':3000|:3001' || echo 'no listener on 3000/3001'
+```
+
+Or check for lingering Node processes:
+
+```bash
+ps aux | grep -E 'node|next|nest' | grep -v grep || echo 'no node/next/nest processes found'
+```
+
+Platform notes
+--------------
+- The launcher uses Unix process groups to reliably terminate child process trees (sends SIGTERM to the child's process group). This works on Linux and macOS. On Windows the process-group kill is not supported; if you target Windows we can add a cross-platform tree-kill approach (e.g., using the `tree-kill` npm package).
+- If you previously had the dev servers left running (from before this fix), you can stop them manually by killing the processes or using the verification commands above and then `kill <pid>`.
+
 ## Scripts
 
 Backend:
