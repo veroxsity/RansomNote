@@ -55,4 +55,29 @@ frontend.log
 # Planning Folder
 planning/
 
+# Monorepo / subprojects
+**/node_modules/
+**/dist/
+**/build/
+**/.next/
+
+# Editor/IDE backups and local files
+.envrc
+.direnv/
+.parcel-cache/
+.sass-cache/
+*.pem
+
+# Temporary files
+.tmp/
+tmp/
+temp/
+pids/
+
+# Misc OS/editor junk
+*.class
+*.cache
+.cache-loader
+
+
 
