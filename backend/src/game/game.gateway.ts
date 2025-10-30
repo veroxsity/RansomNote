@@ -182,23 +182,49 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
 
     try {
+      // Reset scores and set initial judge when game starts
+      lobby.players.forEach(p => (p.score = 0));
+      lobby.judgeIndex = 0;
+      lobby.state = 'IN_PROGRESS';
+
       const updatedLobby = this.gameService.startRound(code, 15, 90, (nextLobby) => {
         // on reveal (timeout or completed) -> broadcast reveal and lobby update
         this.room(code).emit('round:reveal', {
           submissions: nextLobby.currentRound?.submissions,
+          roundNumber: nextLobby.roundNumber,
         });
         this.room(code).emit('lobby:update', nextLobby);
 
-        // start voting phase (30s) after reveal as a fallback for timeout path
-        try {
-          const votingLobby = this.gameService.startVoting(code, 30, ({ winnerId, lobby: finalLobby }) => {
-            this.room(code).emit('result:winner', { winnerId, players: finalLobby.players });
-            this.room(code).emit('lobby:update', finalLobby);
-          });
-          // broadcast lobby update immediately to reflect VOTING stage
-          this.room(code).emit('lobby:update', votingLobby);
-        } catch (e) {
-          // ignore if already started via allSubmitted path
+        // Branch on vote mode
+        const voteMode = (process.env.VOTE_MODE || 'group').toLowerCase();
+        if (voteMode === 'group') {
+          // start voting phase (30s) after reveal as a fallback for timeout path
+          try {
+            const votingLobby = this.gameService.startVoting(code, 30, ({ winnerId, lobby: finalLobby }) => {
+              this.room(code).emit('result:winner', { winnerId, players: finalLobby.players, roundNumber: finalLobby.roundNumber });
+              this.room(code).emit('lobby:update', finalLobby);
+            });
+            // broadcast lobby update immediately to reflect VOTING stage
+            this.room(code).emit('lobby:update', votingLobby);
+          } catch (e) {
+            // ignore if already started via allSubmitted path
+          }
+        } else if (voteMode === 'judge') {
+          // In judge mode, notify only the judge to pick a winner
+          const idx = nextLobby.judgeIndex ?? -1;
+          const judge = idx >= 0 ? nextLobby.players[idx] : undefined;
+          if (judge?.socketId) {
+            // Mark lobby as VOTING (judging) for everyone
+            nextLobby.state = 'VOTING';
+            if (nextLobby.currentRound) {
+              nextLobby.currentRound.stage = 'VOTING';
+            }
+            this.room(code).emit('lobby:update', nextLobby);
+            this.server.to(judge.socketId).emit('judge:begin', {
+              submissions: nextLobby.currentRound?.submissions,
+              roundNumber: nextLobby.roundNumber,
+            });
+          }
         }
       });
 
@@ -215,7 +241,7 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
       }
 
       // broadcast game start and lobby state
-  this.room(code).emit('game:start', updatedLobby);
+      this.room(code).emit('game:start', updatedLobby);
   this.room(code).emit('lobby:update', updatedLobby);
     } catch (err: any) {
       client.emit('lobby:error', { message: err.message });
@@ -246,22 +272,126 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
         // reveal submissions to everyone
         this.room(lobbyCode).emit('round:reveal', {
           submissions: lobby.currentRound?.submissions,
+          roundNumber: lobby.roundNumber,
         });
-        // start voting phase (30s) after reveal
-        try {
-          const votingLobby = this.gameService.startVoting(lobbyCode, 30, ({ winnerId, lobby: updated }) => {
-            // broadcast result and updated lobby
-            this.room(lobbyCode).emit('result:winner', { winnerId, players: updated.players });
-            this.room(lobbyCode).emit('lobby:update', updated);
-          });
-          // immediately reflect the VOTING stage change
-          this.room(lobbyCode).emit('lobby:update', votingLobby);
-        } catch (e: any) {
-          // ignore
+        const voteMode = (process.env.VOTE_MODE || 'group').toLowerCase();
+        if (voteMode === 'group') {
+          // start voting phase (30s) after reveal
+          try {
+            const votingLobby = this.gameService.startVoting(lobbyCode, 30, ({ winnerId, lobby: updated }) => {
+              // broadcast result and updated lobby
+              this.room(lobbyCode).emit('result:winner', { winnerId, players: updated.players, roundNumber: updated.roundNumber });
+              this.room(lobbyCode).emit('lobby:update', updated);
+            });
+            // immediately reflect the VOTING stage change
+            this.room(lobbyCode).emit('lobby:update', votingLobby);
+          } catch (e: any) {
+            // ignore
+          }
+        } else if (voteMode === 'judge') {
+          // Notify only the judge to pick a winner
+          const idx = lobby.judgeIndex ?? -1;
+          const judge = idx >= 0 ? lobby.players[idx] : undefined;
+          if (judge?.socketId) {
+            // Set lobby to VOTING (judging)
+            lobby.state = 'VOTING';
+            if (lobby.currentRound) lobby.currentRound.stage = 'VOTING';
+            this.room(lobbyCode).emit('lobby:update', lobby);
+            this.server.to(judge.socketId).emit('judge:begin', {
+              submissions: lobby.currentRound?.submissions,
+              roundNumber: lobby.roundNumber,
+            });
+          }
         }
       }
     } catch (err: any) {
       client.emit('round:submitAck', { ok: false, message: err.message });
+    }
+  }
+
+  @SubscribeMessage('judge:pick')
+  async handleJudgePick(
+    @MessageBody() payload: { lobbyCode: string; winnerId: number },
+    @ConnectedSocket() client: Socket,
+  ) {
+    const { lobbyCode, winnerId } = payload;
+    const info = this.gameService.findPlayerBySocket(client.id);
+    if (!info || info.lobby.code !== lobbyCode) {
+      return client.emit('judge:pickAck', { ok: false, message: 'Not in lobby' });
+    }
+
+    // Ensure judge mode
+    const voteMode = (process.env.VOTE_MODE || 'group').toLowerCase();
+    if (voteMode !== 'judge') {
+      return client.emit('judge:pickAck', { ok: false, message: 'Not in judge mode' });
+    }
+
+    // Ensure requester is the judge
+    const idx = info.lobby.judgeIndex ?? -1;
+    const judge = idx >= 0 ? info.lobby.players[idx] : undefined;
+    if (!judge || judge.socketId !== client.id) {
+      return client.emit('judge:pickAck', { ok: false, message: 'Only judge can pick' });
+    }
+
+    try {
+      const { lobby } = this.gameService.finalizeWinner(lobbyCode, winnerId);
+      client.emit('judge:pickAck', { ok: true });
+      this.room(lobbyCode).emit('result:winner', { winnerId, players: lobby.players, roundNumber: lobby.roundNumber });
+      this.room(lobbyCode).emit('lobby:update', lobby);
+
+      // Auto-start next round unless game ended
+      if (lobby.state !== 'GAME_END') {
+        setTimeout(() => {
+          try {
+            const nextLobby = this.gameService.startRound(lobbyCode, 15, 90, (nextL) => {
+              this.room(lobbyCode).emit('round:reveal', {
+                submissions: nextL.currentRound?.submissions,
+                roundNumber: nextL.roundNumber,
+              });
+              this.room(lobbyCode).emit('lobby:update', nextL);
+
+              // After reveal in judge mode notify judge again
+              const vm = (process.env.VOTE_MODE || 'group').toLowerCase();
+              if (vm === 'group') {
+                try {
+                  const vl = this.gameService.startVoting(lobbyCode, 30, ({ winnerId, lobby: finalLobby }) => {
+                    this.room(lobbyCode).emit('result:winner', { winnerId, players: finalLobby.players, roundNumber: finalLobby.roundNumber });
+                    this.room(lobbyCode).emit('lobby:update', finalLobby);
+                  });
+                  this.room(lobbyCode).emit('lobby:update', vl);
+                } catch {}
+              } else {
+                const idx = nextL.judgeIndex ?? -1;
+                const judge = idx >= 0 ? nextL.players[idx] : undefined;
+                if (judge?.socketId) {
+                  nextL.state = 'VOTING';
+                  if (nextL.currentRound) nextL.currentRound.stage = 'VOTING';
+                  this.room(lobbyCode).emit('lobby:update', nextL);
+                  this.server.to(judge.socketId).emit('judge:begin', {
+                    submissions: nextL.currentRound?.submissions,
+                    roundNumber: nextL.roundNumber,
+                  });
+                }
+              }
+            });
+            // send round begin privately with word pools
+            for (const player of nextLobby.players) {
+              if (player.socketId) {
+                this.server.to(player.socketId).emit('round:begin', {
+                  prompt: nextLobby.currentRound?.prompt,
+                  words: player.words,
+                  timeLimit: nextLobby.currentRound?.submissionTime ?? 90,
+                  roundNumber: nextLobby.roundNumber,
+                });
+              }
+            }
+            this.room(lobbyCode).emit('game:start', nextLobby);
+            this.room(lobbyCode).emit('lobby:update', nextLobby);
+          } catch {}
+        }, 5000);
+      }
+    } catch (err: any) {
+      client.emit('judge:pickAck', { ok: false, message: err.message });
     }
   }
 
@@ -276,8 +406,8 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
       client.emit('round:voteAck', { ok: true });
       this.room(lobbyCode).emit('lobby:update', res.lobby);
       if (res.allVoted) {
-        const winnerId = res.winnerId;
-        this.room(lobbyCode).emit('result:winner', { winnerId, players: res.lobby.players });
+  const winnerId = res.winnerId;
+  this.room(lobbyCode).emit('result:winner', { winnerId, players: res.lobby.players, roundNumber: res.lobby.roundNumber });
         this.room(lobbyCode).emit('lobby:update', res.lobby);
 
         // Auto-start next round after short delay unless game ended
@@ -287,12 +417,13 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
               const nextLobby = this.gameService.startRound(lobbyCode, 15, 90, (nextL) => {
                 this.room(lobbyCode).emit('round:reveal', {
                   submissions: nextL.currentRound?.submissions,
+                  roundNumber: nextL.roundNumber,
                 });
                 this.room(lobbyCode).emit('lobby:update', nextL);
                 // Begin voting after reveal timeout as fallback
                 try {
                   const vl = this.gameService.startVoting(lobbyCode, 30, ({ winnerId, lobby: finalLobby }) => {
-                    this.room(lobbyCode).emit('result:winner', { winnerId, players: finalLobby.players });
+                    this.room(lobbyCode).emit('result:winner', { winnerId, players: finalLobby.players, roundNumber: finalLobby.roundNumber });
                     this.room(lobbyCode).emit('lobby:update', finalLobby);
                   });
                   this.room(lobbyCode).emit('lobby:update', vl);
@@ -318,6 +449,23 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
     } catch (err: any) {
       client.emit('round:voteAck', { ok: false, message: err.message });
     }
+  }
+
+  @SubscribeMessage('game:end')
+  async handleGameEnd(@MessageBody() payload: { code: string }, @ConnectedSocket() client: Socket) {
+    const { code } = payload;
+    const lobby = this.gameService.getLobby(code);
+    if (!lobby) {
+      throw new Error('Lobby not found');
+    }
+    // Only host (player id 1) can end the game
+    const hostPlayer = lobby.players.find(p => p.id === 1 && p.socketId === client.id);
+    if (!hostPlayer) {
+      throw new Error('Only host can end game');
+    }
+
+    const updated = this.gameService.endGame(code);
+    this.room(code).emit('lobby:update', updated);
   }
 
   // Backwards-compatible aliases for unit tests / direct callers.
@@ -394,6 +542,14 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
         throw new Error('Unable to determine lobby or player from socket');
       }
 
+      // Validate round number if provided by client
+      if (typeof data.roundNumber !== 'undefined') {
+        const current = this.gameService.getLobby(lobbyCode)?.roundNumber;
+        if (current && data.roundNumber !== current) {
+          throw new Error('Round mismatch');
+        }
+      }
+
       // Get player and verify words against their pool
       const player = info.lobby.players.find(p => p.id === playerId);
       if (!player) {
@@ -438,6 +594,14 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
       const voterId = info?.player.id;
       if (!lobbyCode || typeof voterId === 'undefined') {
         throw new Error('Unable to determine lobby or voter from socket');
+      }
+
+      // Validate round number if provided by client
+      if (typeof data.roundNumber !== 'undefined') {
+        const current = this.gameService.getLobby(lobbyCode)?.roundNumber;
+        if (current && data.roundNumber !== current) {
+          throw new Error('Round mismatch');
+        }
       }
 
       // Check for self-voting

@@ -23,7 +23,7 @@ export class GameService {
 
   private submissionTimers: Map<string, NodeJS.Timeout> = new Map();
   private voteTimers: Map<string, NodeJS.Timeout> = new Map();
-  private WIN_THRESHOLD = 5;
+  private WIN_THRESHOLD = Number(process.env.WIN_THRESHOLD) || 5;
 
   /**
    * Start a new round and optionally register a callback (onReveal) that will be
@@ -38,21 +38,47 @@ export class GameService {
   ) {
     const lobby = this.lobbyService.getLobby(lobbyCode);
     if (!lobby) throw new Error('Lobby not found');
+    // Move game to IN_PROGRESS if just starting
+    if (lobby.state === 'WAITING_FOR_PLAYERS') {
+      lobby.state = 'IN_PROGRESS';
+    }
 
     // load prompts/words
     const dataPath = path.join(__dirname, '..', '..', 'data', 'words.json');
     const raw = fs.readFileSync(dataPath, 'utf-8');
     const data = JSON.parse(raw) as { prompts: string[]; words: string[] };
 
+    // Ensure per-player pools do not contain duplicates by deduping the source
+    // list (in case the dataset contains duplicates) and sampling without
+    // replacement for each player's pool.
+    const uniqueWords: string[] = Array.from(
+      new Set(
+        (data.words || [])
+          .map((w) => (typeof w === 'string' ? w.trim() : ''))
+          .filter((w) => w.length > 0)
+      )
+    );
+
     // pick a random prompt
     const prompt = data.prompts[Math.floor(Math.random() * data.prompts.length)];
 
-    // helper to pick N random words (allow repeats across players)
+    // helper to pick N random words for a single player WITHOUT duplicates
+    // within that player's pool. Duplicates across different players are
+    // allowed because each pool is sampled independently.
     const pickWords = (n: number) => {
-      const words: string[] = [];
-      for (let i = 0; i < n; i++) {
-        const w = data.words[Math.floor(Math.random() * data.words.length)];
-        words.push(w);
+      const poolSize = Math.max(0, Math.min(n, uniqueWords.length));
+      // Fisher-Yates on a lightweight index array to avoid copying big strings
+      const indices = Array.from({ length: uniqueWords.length }, (_, i) => i);
+      for (let i = indices.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [indices[i], indices[j]] = [indices[j], indices[i]];
+      }
+      const words = indices.slice(0, poolSize).map((idx) => uniqueWords[idx]);
+      // If requested n > unique source size, fallback by sampling with replacement
+      // for the remainder (rare; dataset is usually large). This still guarantees
+      // no duplicates in the first `uniqueWords.length` entries.
+      while (words.length < n && uniqueWords.length > 0) {
+        words.push(uniqueWords[Math.floor(Math.random() * uniqueWords.length)]);
       }
       return words;
     };
@@ -73,8 +99,8 @@ export class GameService {
 
     lobby.currentRound = round as any;
     lobby.roundNumber = (lobby.roundNumber || 0) + 1;
-    // move lobby into active round state
-    lobby.state = 'ROUND_ACTIVE';
+  // move lobby into active round state
+  lobby.state = 'ROUND_ACTIVE';
 
     // clear any previous timer
     const prev = this.submissionTimers.get(lobbyCode);
@@ -116,6 +142,15 @@ export class GameService {
     if (!lobby) throw new Error('Lobby not found');
     const player = lobby.players.find((p) => p.id === playerId);
     if (!player) throw new Error('Player not in lobby');
+
+    // If judge mode, block judge submissions
+    const voteMode = (process.env.VOTE_MODE || 'group').toLowerCase();
+    if (voteMode === 'judge') {
+      const judgeId = typeof lobby.judgeIndex === 'number' ? lobby.players[lobby.judgeIndex]?.id : undefined;
+      if (judgeId && playerId === judgeId) {
+        throw new Error('Judge cannot submit');
+      }
+    }
 
     const round = lobby.currentRound;
     if (!round) throw new Error('No active round');
@@ -227,6 +262,12 @@ export class GameService {
     const voter = lobby.players.find((p) => p.id === voterId);
     if (!voter || voter.status === 'DISCONNECTED') throw new Error('Voter not found or disconnected');
 
+    // In judge mode, voters cannot vote; only judge picks winner
+    const voteMode = (process.env.VOTE_MODE || 'group').toLowerCase();
+    if (voteMode === 'judge') {
+      throw new Error('Voting disabled in judge mode');
+    }
+
     // Can't vote for self
     if (voterId === submissionId) throw new Error('Cannot vote for self');
 
@@ -253,6 +294,28 @@ export class GameService {
     }
 
     return { lobby, winnerId: null, allVoted: false };
+  }
+
+  finalizeWinner(lobbyCode: string, winnerId: number) {
+    const lobby = this.lobbyService.getLobby(lobbyCode);
+    if (!lobby || !lobby.currentRound) throw new Error('Lobby or round not found');
+    const round = lobby.currentRound;
+
+    const winner = lobby.players.find((p) => p.id === winnerId);
+    if (!winner) throw new Error('Winner not found');
+
+    winner.score += 1;
+    round.stage = 'COMPLETE';
+    lobby.state = 'ROUND_END';
+
+    const someoneWon = lobby.players.find((p) => p.score >= this.WIN_THRESHOLD);
+    if (someoneWon) {
+      lobby.state = 'GAME_END';
+    } else {
+      lobby.judgeIndex = ((lobby.judgeIndex ?? -1) + 1) % lobby.players.length;
+    }
+
+    return { lobby, winnerId };
   }
 
   private finalizeVotes(lobby: Lobby): number | null {
@@ -338,5 +401,15 @@ export class GameService {
 
   updatePlayerStatus(lobbyCode: string, playerId: number, status: Player['status']) {
     return this.lobbyService.updatePlayerStatus(lobbyCode, playerId, status);
+  }
+
+  endGame(lobbyCode: string) {
+    const lobby = this.lobbyService.getLobby(lobbyCode);
+    if (!lobby) throw new Error('Lobby not found');
+    lobby.state = 'GAME_END';
+    if (lobby.currentRound) {
+      lobby.currentRound.stage = 'COMPLETE';
+    }
+    return lobby;
   }
 }

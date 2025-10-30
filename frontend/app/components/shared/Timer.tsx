@@ -34,7 +34,10 @@ export const Timer = ({ initialSeconds, onExpire, className }: TimerProps) => {
 
   return (
     <div className={className ?? "text-sm text-gray-600"}>
-      ⏳ {mm}:{ss}
+      <span aria-hidden>⏳ {mm}:{ss}</span>
+      <span className="sr-only" role="status" aria-live="polite">
+        Time remaining {mm} minutes {ss} seconds
+      </span>
     </div>
   );
 };

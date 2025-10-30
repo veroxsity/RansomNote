@@ -16,6 +16,7 @@ export const useGame = (): GameContextValue => {
     hasSubmitted: false,
     hasVoted: false,
     lastWinnerId: null,
+    isJudgeTurn: false,
     isConnected: false,
     createLobby: () => {},
     joinLobby: () => {},
@@ -23,5 +24,6 @@ export const useGame = (): GameContextValue => {
     setReady: () => {},
     submitAnswer: () => {},
     submitVote: () => {},
+    judgePick: () => {},
   };
 };

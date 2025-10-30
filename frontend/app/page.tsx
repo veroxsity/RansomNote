@@ -5,6 +5,7 @@ import { useGame } from './hooks/useGame';
 import { LobbyCreation } from './components/lobby/LobbyCreation';
 import { PlayerList } from './components/lobby/PlayerList';
 import { GameBoard } from './components/game/GameBoard';
+import { ErrorBoundary } from './components/shared/ErrorBoundary';
 
 export default function Page() {
   const { lobby, error, startGame, setReady, currentPlayer, round, isConnected, isLoading } = useGame();
@@ -31,7 +32,9 @@ export default function Page() {
       {!lobby ? (
         <LobbyCreation />
       ) : isGameActive ? (
-        <GameBoard />
+        <ErrorBoundary>
+          <GameBoard />
+        </ErrorBoundary>
       ) : (
         <div className="max-w-2xl mx-auto">
           <div className="bg-white p-6 rounded-lg shadow-md">
@@ -41,6 +44,12 @@ export default function Page() {
                 State: {lobby.state}
               </div>
             </div>
+
+            {typeof lobby.judgeIndex === 'number' && lobby.judgeIndex >= 0 && (
+              <div className="mb-3 p-2 rounded bg-yellow-50 text-yellow-800 text-sm">
+                Current judge: <strong>{lobby.players[lobby.judgeIndex]?.nickname}</strong>
+              </div>
+            )}
             
             <PlayerList players={lobby.players} judgeIndex={lobby.judgeIndex} />
 
@@ -62,6 +71,20 @@ export default function Page() {
                     className="w-full bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600"
                   >
                     Start Game
+                  </button>
+                )}
+
+                {isHost && (
+                  <button
+                    onClick={() => {
+                      // Emit early end; relies on server handler
+                      // We go through raw socket to avoid bloating game context
+                      const event = new CustomEvent('game:end-request');
+                      window.dispatchEvent(event);
+                    }}
+                    className="w-full bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600"
+                  >
+                    End Game
                   </button>
                 )}
                 

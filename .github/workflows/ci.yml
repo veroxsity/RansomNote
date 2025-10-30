@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        vote_mode: [group, judge]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend/package-lock.json
+
+      - name: Backend install and test
+        working-directory: backend
+        env:
+          VOTE_MODE: ${{ matrix.vote_mode }}
+        run: |
+          npm ci --no-fund --no-audit
+          npm test -- --watch=false
+
+      - name: Frontend install and build
+        working-directory: frontend
+        env:
+          NEXT_PUBLIC_SOCKET_URL: http://localhost:3001
+          NEXT_PUBLIC_DEBUG_SOCKET: 'false'
+          NEXT_PUBLIC_VOTE_MODE: ${{ matrix.vote_mode }}
+        run: |
+          npm ci --no-fund --no-audit
+          npm run build

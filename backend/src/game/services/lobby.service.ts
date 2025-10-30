@@ -32,7 +32,8 @@ export class LobbyService {
       throw new Error('Nickname already taken in lobby');
     }
 
-    if (lobby.players.length >= 8) {
+    const maxPlayers = Number(process.env.MAX_PLAYERS) || 8;
+    if (lobby.players.length >= maxPlayers) {
       throw new Error('Lobby is full');
     }
 

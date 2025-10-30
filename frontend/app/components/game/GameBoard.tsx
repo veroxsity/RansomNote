@@ -98,6 +98,7 @@ export const GameBoard = () => {
               submissions={round.submissions}
               players={lobby.players}
               currentPlayerId={currentPlayer.id}
+              judgeIndex={lobby.judgeIndex}
             />
           </>
         )}

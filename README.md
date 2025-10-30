@@ -32,6 +32,9 @@ NEXT_PUBLIC_DEBUG_SOCKET=false
 
 ```
 FRONTEND_ORIGIN=http://localhost:3000
+# Voting mode: 'group' (everyone votes) or 'judge' (rotating judge picks)
+VOTE_MODE=group
+WIN_THRESHOLD=5
 ```
 
 3) Run in two terminals
@@ -51,6 +54,13 @@ npm run dev
 ```
 
 Open http://localhost:3000 and create/join a lobby. The server runs on http://localhost:3001.
+
+Alternatively, from the repo root you can run both with one command (after installing root deps):
+
+```bash
+npm install
+npm run dev
+```
 
 ## Scripts
 
@@ -78,6 +88,22 @@ npm test
 - CORS: The backend reads allowed origins from `FRONTEND_ORIGIN` (comma-separated supported). Defaults to `http://localhost:3000`.
 - Socket transport: The client uses WebSocket-only transport to avoid dev CORS issues.
 - State: All game state is server-authoritative and kept in-memory (no DB).
+
+### Debugging sockets
+- To enable verbose socket logs in the browser without rebuilding, run in dev tools:
+	`localStorage.setItem('debugSocket','true'); location.reload();`
+- To disable: `localStorage.removeItem('debugSocket'); location.reload();`
+
+### Ending a game early (host only)
+- The host can end a game during the lobby (pre-start) via the End Game button.
+
+### Voting modes
+- Group mode (default): Everyone votes during VOTING; most votes wins (random tie-break).
+- Judge mode: The rotating judge cannot submit or vote; after reveal, only the judge sees a pick UI and selects the winner.
+
+To enable judge mode:
+- Backend: set `VOTE_MODE=judge` in `backend/.env`.
+- Frontend: set `NEXT_PUBLIC_VOTE_MODE=judge` in `frontend/.env.local` so the UI shows the judge picker and disables group voting.
 
 ## Troubleshooting
 

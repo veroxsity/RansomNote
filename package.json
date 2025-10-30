@@ -1,0 +1,14 @@
+{
+  "name": "ransomnote-monorepo",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "dev": "concurrently -n backend,frontend -c blue,green \"npm:dev:backend\" \"npm:dev:frontend\"",
+    "dev:backend": "npm --prefix backend run dev",
+    "dev:frontend": "npm --prefix frontend run dev",
+    "app": "node bin/app.mjs"
+  },
+  "devDependencies": {
+    "concurrently": "8.2.2"
+  }
+}

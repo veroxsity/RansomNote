@@ -12,6 +12,7 @@ export interface GameContextValue {
   hasSubmitted: boolean;
   hasVoted: boolean;
   lastWinnerId?: number | null;
+  isJudgeTurn?: boolean;
   isConnected?: boolean;
   // actions
   createLobby: (nickname: string) => void;
@@ -20,6 +21,7 @@ export interface GameContextValue {
   setReady: () => void;
   submitAnswer: (answer: string[]) => void;
   submitVote: (submissionId: number) => void;
+  judgePick: (winnerId: number) => void;
 }
 
 export const GameContext = createContext<GameContextValue | null>(null);
