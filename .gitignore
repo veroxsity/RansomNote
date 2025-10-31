@@ -79,5 +79,8 @@ pids/
 *.cache
 .cache-loader
 
+# GitHub / AI guidance files (local-only)
+.github/copilot-instructions.md
+
 
 
